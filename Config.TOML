@@ -1,0 +1,13 @@
+[theme]
+# base="dark" — bütün widget-lər (selectbox, checkbox, radio, slider və s.)
+# tünd temaya uyğun render olunur, "sistem tünd rejimi" ilə toqquşma olmur.
+base = "dark"
+
+# Aşağıdakı rənglər base="dark"-ın standart tünd fonunu ƏVƏZ EDİR —
+# beləliklə bənövşəyi fon və tünd mətn qalır, amma widget-lər artıq
+# ağ mətn/qırmızı haşiyə kimi qəribə qarışıqlıq vermir.
+backgroundColor = "#F4F1FB"
+secondaryBackgroundColor = "#EAE2F7"
+textColor = "#2B2340"
+primaryColor = "#7C4DFF"
+font = "sans serif"
