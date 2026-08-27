@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from groq import Groq
+import requests
 
 from product_parser import parse_product
 
@@ -19,6 +20,11 @@ app = FastAPI()
 
 groq_api_key = (os.getenv("GROQ_API_KEY") or "").strip().strip('"').strip("'")
 groq_client = Groq(api_key=groq_api_key)
+
+# Telegram Bot API — "məhsul artıq mövcud deyil" bildirişi n8n-dən kənar,
+# birbaşa buradan göndərilir (endirim alertlərindən fərqli, ayrıca hadisə).
+TELEGRAM_BOT_TOKEN = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+TELEGRAM_CHAT_ID = (os.getenv("TELEGRAM_CHAT_ID") or "").strip()
 
 # Курсы валют для приведения цен сайта к МАНАТАМ
 TRY_TO_AZN = 0.05
@@ -128,6 +134,32 @@ def safe_markdown_url(url: str) -> str:
     return url.replace("(", "%28").replace(")", "%29")
 
 
+def send_unavailable_notice(title: str, url: str) -> None:
+    """Məhsul saytdan silinəndə (404) BİR DƏFƏLİK Telegram-a xəbər göndərir.
+    n8n-in endirim flow-undan asılı deyil — birbaşa Bot API ilə göndərilir."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("DEBUG: TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID .env-də yoxdur, "
+              "'məhsul silinib' bildirişi göndərilmədi.")
+        return
+
+    text = (
+        f"⚠️ *MƏHSUL ARTIQ MÖVCUD DEYİL*\n\n"
+        f"«{escape_md(title)}» satışdan götürülüb və ya link etibarsızdır — "
+        f"bu məhsul üçün qiymət yoxlaması artıq aparılmayacaq.\n\n"
+        f"🔗 [Keçmiş link]({safe_markdown_url(url)})"
+    )
+    try:
+        resp = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            data={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            print(f"DEBUG: 'məhsul silinib' bildirişi göndərilmədi. Status: {resp.status_code} — {resp.text[:200]}")
+    except Exception as e:
+        print(f"DEBUG: 'məhsul silinib' bildirişi göndərilmədi: {e}")
+
+
 def load_tracked_products():
     if os.path.exists("products.json"):
         try:
@@ -181,8 +213,21 @@ def check_prices():
                 if parsed.get("success"):
                     url = decoded_url
 
-        # 3. ФОЛЛБЕК (Резерв) - Если парсер окончательно упал
-        # Берем цену из базы данных, чтобы товар не потерялся
+        # 3. Əgər son cəhddə də 404 (məhsul HƏQİQƏTƏN silinib) təsdiqlənibsə —
+        # köhnə qiyməti "canlıymış kimi" göstərmirik. Məhsulu "unavailable" qeyd
+        # edirik və (yalnız İLK dəfə aşkarlananda) Telegram-a bir dəfə xəbər gedir.
+        if not parsed.get("success") and parsed.get("not_found"):
+            already_marked = bool(item.get("unavailable"))
+            item["unavailable"] = True
+            if not already_marked:
+                print(f"DEBUG: 🚫 Məhsul artıq mövcud deyil (404): {item.get('name', raw_url)}")
+                send_unavailable_notice(item.get("name") or "Məhsul", raw_url)
+            else:
+                print(f"DEBUG: (artıq qeyd olunub) Məhsul hələ də mövcud deyil: {item.get('name', raw_url)}")
+            continue
+
+        # 4. ФОЛЛБЕК (Резерв) - Если парсер окончательно упал (müvəqqəti xəta,
+        # 404 DEYİL) — Берем цену из базы данных, чтобы товар не потерялся
         if not parsed.get("success"):
             print(f"DEBUG: ❌ ОШИБКА ПАРСЕРА. Пытаемся взять цену из базы данных для: {raw_url}")
             db_price_raw = item.get("current_price") or item.get("price")
@@ -240,6 +285,9 @@ def check_prices():
             item["image_url"] = parsed["image_url"]
         item["price_azn"] = round(current_price_azn, 2) if site_currency != "AZN" else None
         item["target_price_azn"] = round(target_price_azn, 2) if site_currency != "AZN" else None
+        # Bura çatdıqsa, məhsul uğurla tapılıb — əvvəllər "unavailable" qeyd
+        # olunubsa belə, indi geri qaytarılıb sayılır.
+        item["unavailable"] = False
 
         # 1. ОБРЕЗАЕМ НАЗВАНИЕ: Оставляем максимум 80 символов, чтобы не спамить и не превышать лимит
         short_title = title if len(title) < 80 else title[:77] + "..."
