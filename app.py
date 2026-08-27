@@ -353,7 +353,9 @@ if choice == "Məhsulları göstər":
 
                         st.text(f"Hədəf: {format_price_with_azn(p, p['target_price'], p.get('target_price_azn'))}")
 
-                        if current <= clean_price(p["target_price"]):
+                        if p.get("unavailable"):
+                            st.error("🚫 Artıq mövcud deyil (link etibarsızdır)")
+                        elif current <= clean_price(p["target_price"]):
                             st.success("✅ Sərfəlidir!")
                         else:
                             st.warning("⏳ Gözləmək.")

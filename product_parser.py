@@ -595,7 +595,16 @@ def parse_product(url: str) -> dict:
 
         return result
     except requests.RequestException as exc:
-        return {"success": False, "error": f"Sayt sorğusunu yerinə yetirmək olmadı: {exc}", "url": url}
+        # response varsa (məs. 404), status kodunu çıxarırıq ki, çağıran tərəf
+        # "məhsul həqiqətən silinib" ilə "müvəqqəti şəbəkə xətası"-nı ayıra bilsin.
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+        return {
+            "success": False,
+            "error": f"Sayt sorğusunu yerinə yetirmək olmadı: {exc}",
+            "url": url,
+            "status_code": status_code,
+            "not_found": status_code == 404,
+        }
     except Exception as exc:
         return {"success": False, "error": str(exc), "url": url}
 
