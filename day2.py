@@ -1,7 +1,7 @@
 import requests
 
 products = []
-WEBHOOK_URL = "http://localhost:5678/webhook-test/PriceBot"
+WEBHOOK_URL = "http://localhost:5678/webhook/PriceBot-manual"
 
 
 def add_product(name, url, current_price, target_price):
